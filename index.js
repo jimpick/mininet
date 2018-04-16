@@ -287,6 +287,7 @@ Host.prototype._onrpc = function (id, socket) {
       socket.destroy()
       return
     }
+    self._mn.emit('message', data.name, data.data, data.to)
     if (data.to === '*') return broadcast(data)
     if (data.to) return forward(data, data.to)
 
