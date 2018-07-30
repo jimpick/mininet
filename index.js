@@ -79,6 +79,7 @@ Mininet.prototype._onexit = function (code) {
 }
 
 Mininet.prototype._exec = function (cmd) {
+  // console.log('Jim mininet _exec', cmd)
   if (this._defer) this._defer.push(cmd)
   else this._execNow(cmd)
 }
@@ -101,9 +102,19 @@ Mininet.prototype._execNow = function (cmd) {
       except:
         exit(10)
 
-      def print_host(h):
+      def print_host(name):
         try:
-          print "ack", json.dumps({'name': h.name, 'ip': h.IP(), 'mac': h.MAC()})
+          # print "ack", json.dumps({'name': h.name, 'ip': h.IP(), 'mac': h.MAC()})
+          for h in net.hosts:
+            print h.name
+            if h.name == name:
+              print "ack", json.dumps({
+                'name': h.name,
+                'ip': h.IP(),
+                'mac': h.MAC(),
+                'intfNames': h.intfNames()
+              })
+              return
         except:
           print "err", json.dumps("host info failed")
 
@@ -205,10 +216,20 @@ Mininet.prototype._parse = function (line) {
   var i = line.indexOf(' ')
   var type = line.slice(0, i)
   var data = line.slice(i + 1)
+  // console.log('Jim _parse', type, data)
 
   switch (type) {
     case 'ack':
-      this._queue.shift()(null, JSON.parse(data))
+      const cb = this._queue.shift()
+      try {
+        const jsonData = JSON.parse(data)
+        // console.log('Jim _parse jsonData', jsonData)
+        cb(null, jsonData)
+      } catch (e) {
+        console.log('JSON exception', e)
+        cb(e)
+      }
+      // this._queue.shift()(null, JSON.parse(data))
       break
 
     case 'err':
@@ -242,6 +263,18 @@ function Switch (index, mn) {
   `)
 }
 
+Switch.prototype.attach = function (intf, cb) {
+  if (!cb) cb = noop
+
+  this._mn._exec(`
+    try:
+      net.get('${this.id}').attach('${intf}')
+    except:
+      print "error", json.dumps("attach failed")
+  `)
+  cb()
+}
+
 function Host (index, mn) {
   events.EventEmitter.call(this)
   this.index = index
@@ -253,7 +286,8 @@ function Host (index, mn) {
   this._mn = mn
   this._mn._exec(`
     try:
-      ${this.id} = net.addHost("${this.id}")
+      ${this.id} = net.addHost('${this.id}')
+      # ${this.id} = net.addHost('${this.id}', ip='10.0.0.${index + 1}/24')
     except:
       print "critical", json.dumps("add host failed")
   `)
@@ -344,19 +378,45 @@ Host.prototype.update = function (cb) {
 
   var self = this
 
-  this._queue.push(onupdate)
+  this._mn._queue.push(onupdate)
+  // console.log('Jim mininet host update', this.id)
   this._mn._exec(`
-    print_host(${this.id})
+    print_host('${this.id}')
   `)
 
   function onupdate (err, info) {
     if (err) return cb(err)
+
+    // console.log('Jim mininet onupdate', self.id, info)
 
     self.ip = info.ip
     self.mac = info.mac
 
     cb(null, info)
   }
+}
+
+Host.prototype.setIP = function (ip, cb) {
+  if (!cb) cb = noop
+
+  var self = this
+
+  //this._mn._queue.push(onsetip)
+  this._mn._exec(`
+    try:
+      net.get('${this.id}').setIP('${ip}')
+    except:
+      print "error", json.dumps("setIP failed")
+  `)
+  cb()
+
+  /*
+  function onsetip (err, info) {
+    console.log('Jim mininet onsetip', err, info)
+    if (err) return cb(err)
+    cb(null, info)
+  }
+  */
 }
 
 Host.prototype.link =
